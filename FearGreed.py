@@ -10,8 +10,8 @@ st.title("📊 Fear & Greed Index Dashboard")
 st.caption("Source: CNN Business / fear-and-greed API")
 
 # 데이터 불러오기
-fg = FearAndGreedIndex()
-data = fg.get()
+data = FearAndGreedIndex()
+#data = fg.get()
 df = pd.DataFrame(data)
 
 # 데이터 정리
@@ -48,3 +48,4 @@ st.markdown("""
 
 st.markdown("---")
 st.caption("🕒 자동으로 최신 지수가 반영됩니다 (CNN Fear & Greed Index API 기준).")
+

@@ -3,109 +3,180 @@ import pandas as pd
 import plotly.graph_objects as go
 from fear_and_greed import get
 import requests
-import numpy as np
+import math
 
-# =============================
-# 데이터 불러오기
-# =============================
-fng = get()
-current_score = round(fng.value)
-current_rating = fng.description.upper()
+st.set_page_config(page_title="Fear & Greed - CNN style gauge", layout="wide")
 
-url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-headers = {"User-Agent": "Mozilla/5.0"}
-response = requests.get(url, headers=headers)
-data = response.json()
-historical = data['fear_and_greed_historical']['data']
-df = pd.DataFrame(historical)
-df['x'] = pd.to_datetime(df['x'] / 1000, unit='s')
-df = df.rename(columns={'x': 'Date', 'y': 'Score'})
+# -------------------------
+# 데이터 (예: 실제 호출)
+# -------------------------
+try:
+    fng = get()
+    current_score = int(round(fng.value))
+    current_rating = fng.description.title()
+except Exception:
+    # 로컬 테스트용 fallback
+    current_score = 27
+    current_rating = "Fear"
 
-# =============================
-# CNN 스타일 게이지 생성
-# =============================
-def cnn_gauge(value):
-    # 구간별 색상
-    colors = ['#d9534f', '#f0ad4e', '#f7f7f7', '#5bc0de', '#5cb85c']
-    labels = ['Extreme Fear', 'Fear', 'Neutral', 'Greed', 'Extreme Greed']
+# CNN 데이터 (history + comparisons)
+try:
+    url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    data = requests.get(url, headers=headers).json()
+except Exception:
+    # fallback 더미
+    data = {
+        "fear_and_greed": {
+            "previous_close": 23.35,
+            "previous_1_week": 31.73,
+            "previous_1_month": 58.46,
+            "previous_1_year": 68.57
+        },
+        "fear_and_greed_historical": {"data": []}
+    }
 
-    # 게이지 영역을 파이차트로 (반원)
-    values = [20, 20, 20, 20, 20, 100]  # 마지막은 투명한 반쪽 (숨김용)
-    fig = go.Figure(data=[
-        go.Pie(
-            values=values,
-            rotation=90,
-            hole=0.7,
-            marker_colors=colors + ['rgba(0,0,0,0)'],
-            text=labels + [''],
-            textinfo='text',
-            textposition='outside',
-            direction='clockwise',
-            sort=False,
-            showlegend=False
-        )
-    ])
+# -------------------------
+# CNN 스타일 반원 게이지 함수
+# -------------------------
+def cnn_semi_gauge(value, size=(700, 420)):
+    # segments: Extreme Fear, Fear, Neutral, Greed, Extreme Greed
+    seg_colors = ["#d9534f", "#f0ad4e", "#f2f2f2", "#5bc0de", "#5cb85c"]
+    seg_labels = ["Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"]
+    seg_values = [20, 20, 20, 20, 20]  # equal segments (0-100)
 
-    # 바늘 위치 계산 (값을 0~180도에 매핑)
-    theta = 180 * (value / 100)
-    r = 0.5
-    x_head = 0.5 + r * np.cos(np.radians(180 - theta))
-    y_head = 0.5 + r * np.sin(np.radians(180 - theta))
+    # We add an invisible half to hide bottom semicircle
+    invisible = [0.0001]  # tiny slice to complete circle (or use larger to ensure hide)
+    pie_vals = seg_values + invisible
+    pie_colors = seg_colors + ["rgba(0,0,0,0)"]
 
-    # 바늘 (검은색 선)
+    fig = go.Figure()
+
+    fig.add_trace(go.Pie(
+        values=pie_vals,
+        marker_colors=pie_colors,
+        hole=0.62,
+        rotation=180,        # start from left, sweep clockwise
+        direction="clockwise",
+        sort=False,
+        textinfo="none",
+        hoverinfo="none",
+        showlegend=False,
+        domain=dict(x=[0, 1], y=[0, 1])
+    ))
+
+    # --- Needle 계산 ---
+    # Map value 0..100 -> angle 0..180 degrees (0 at left, 180 at right)
+    theta = (value / 100.0) * 180.0
+    # convert to plot coordinates: angle measured from left (180 deg) clockwise -> we want trig angle
+    # We'll compute angle from x-axis: trig_angle = math.radians(180 - theta)
+    trig_angle = math.radians(180 - theta)
+    cx, cy = 0.5, 0.5  # center in pie domain coords
+    needle_len = 0.38
+    x_head = cx + needle_len * math.cos(trig_angle)
+    y_head = cy + needle_len * math.sin(trig_angle)
+
+    # base of needle slightly shorter for thickness illusion
+    x_base = cx + 0.02 * math.cos(trig_angle + math.pi)
+    y_base = cy + 0.02 * math.sin(trig_angle + math.pi)
+
+    # draw needle (thick black line) and a small center circle
     fig.add_trace(go.Scatter(
-        x=[0.5, x_head],
-        y=[0.5, y_head],
-        mode='lines',
-        line=dict(color='black', width=4),
+        x=[x_base, x_head],
+        y=[y_base, y_head],
+        mode="lines",
+        line=dict(color="black", width=9),
+        hoverinfo="none",
+        showlegend=False
+    ))
+    # needle tip (thin)
+    fig.add_trace(go.Scatter(
+        x=[x_base, x_head],
+        y=[y_base, y_head],
+        mode="lines",
+        line=dict(color="black", width=2),
+        hoverinfo="none",
         showlegend=False
     ))
 
-    # 중앙 텍스트 (현재 값)
-    fig.add_annotation(
-        x=0.5, y=0.35,
-        text=f"<b>{value}</b>",
-        showarrow=False,
-        font=dict(size=36, color="black")
-    )
+    # center white circle to mimic gauge hole
+    fig.add_shape(type="circle",
+                  xref="paper", yref="paper",
+                  x0=0.48, y0=0.36, x1=0.52, y1=0.40,
+                  fillcolor="white", line_color="rgba(0,0,0,0)")
+    # center score annotation (below center a bit)
+    fig.add_annotation(x=0.5, y=0.34, text=f"<b style='font-size:36px'>{value}</b>",
+                       showarrow=False, font=dict(size=36, color="black"))
+
+    # ticks 0,25,50,75,100
+    tick_vals = [0, 25, 50, 75, 100]
+    tick_radius = 0.515
+    for t in tick_vals:
+        t_theta = math.radians(180 - (t / 100.0) * 180.0)
+        tx = cx + tick_radius * math.cos(t_theta)
+        ty = cy + tick_radius * math.sin(t_theta)
+        fig.add_annotation(x=tx, y=ty, text=str(t), showarrow=False,
+                           font=dict(size=12, color="gray"), yshift=-5)
+
+    # segment labels (place outside arcs)
+    seg_mid_angles = [10, 45, 90, 135, 170]  # approximate mid positions (deg from left->right)
+    label_radius = 0.78
+    for lab, ang in zip(seg_labels, seg_mid_angles):
+        a = math.radians(180 - ang)
+        lx = cx + label_radius * math.cos(a)
+        ly = cy + label_radius * math.sin(a)
+        fig.add_annotation(x=lx, y=ly, text=f"<b>{lab}</b>", showarrow=False,
+                           font=dict(size=13, color="#6b6b6b"))
 
     fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False,
-        height=400,
-        width=700,
-        paper_bgcolor='white',
-        xaxis=dict(showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(showgrid=False, zeroline=False, visible=False)
+        margin=dict(l=20, r=20, t=20, b=20),
+        width=size[0],
+        height=size[1],
+        paper_bgcolor="white",
+        xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
+        yaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1])
     )
+
+    # ensure pie appears as perfect semicircle: make plot square-ish and hide axes
+    fig.update_traces(hoverinfo="none", textfont_size=12)
     return fig
 
-# =============================
-# Streamlit UI
-# =============================
-st.set_page_config(page_title="Fear & Greed Index Dashboard", layout="wide")
-st.title("🧭 CNN Fear & Greed Index Dashboard")
+# -------------------------
+# Streamlit 레이아웃
+# -------------------------
+st.title("CNN Fear & Greed — Semi-circle Gauge (Improved)")
 
-# CNN 게이지 표시
-fig = cnn_gauge(current_score)
-st.plotly_chart(fig, use_container_width=True)
+left, right = st.columns([2, 1])
 
-# 비교 정보 표시
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Previous Close", f"{data['fear_and_greed']['previous_close']}", fng.description)
-col2.metric("1 Week Ago", f"{data['fear_and_greed']['previous_1_week']}")
-col3.metric("1 Month Ago", f"{data['fear_and_greed']['previous_1_month']}")
-col4.metric("1 Year Ago", f"{data['fear_and_greed']['previous_1_year']}")
+with left:
+    fig = cnn_semi_gauge(current_score, size=(820, 460))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-# 역사 데이터 라인 그래프
-st.markdown("### 📈 Historical Fear & Greed Index")
-fig_line = go.Figure()
-fig_line.add_trace(go.Scatter(x=df['Date'], y=df['Score'], mode='lines', name='Fear & Greed'))
-fig_line.update_layout(
-    title='Historical Trend',
-    xaxis_title='Date',
-    yaxis_title='Score (0-100)',
-    yaxis_range=[0, 100],
-    paper_bgcolor='white'
-)
-st.plotly_chart(fig_line, use_container_width=True)
+with right:
+    st.markdown("### Current")
+    st.markdown(f"**{current_score}**  —  {current_rating}")
+    st.write("")
+    st.markdown("### Comparisons")
+    prev = data["fear_and_greed"]["previous_close"]
+    onew = data["fear_and_greed"]["previous_1_week"]
+    onem = data["fear_and_greed"]["previous_1_month"]
+    oney = data["fear_and_greed"]["previous_1_year"]
+
+    def small_badge(val):
+        color = "#5cb85c" if val >= 60 else ("#f0ad4e" if val >= 45 else "#d9534f")
+        return f"<div style='display:inline-block;padding:6px 10px;border-radius:20px;background:{color};color:white;font-weight:600'>{val:.0f}</div>"
+
+    st.markdown(f"**Previous Close**  {small_badge(prev)}", unsafe_allow_html=True)
+    st.markdown(f"**1 Week Ago**  {small_badge(onew)}", unsafe_allow_html=True)
+    st.markdown(f"**1 Month Ago**  {small_badge(onem)}", unsafe_allow_html=True)
+    st.markdown(f"**1 Year Ago**  {small_badge(oney)}", unsafe_allow_html=True)
+
+# optional: show history line if available
+if data.get("fear_and_greed_historical", {}).get("data"):
+    hist = pd.DataFrame(data["fear_and_greed_historical"]["data"])
+    hist["x"] = pd.to_datetime(hist["x"] / 1000, unit="s")
+    hist = hist.rename(columns={"x": "Date", "y": "Score"})
+    st.markdown("### Historical trend")
+    fig_line = go.Figure(go.Scatter(x=hist["Date"], y=hist["Score"], mode="lines"))
+    fig_line.update_layout(yaxis_range=[0, 100], margin=dict(l=0, r=0, t=20, b=0), height=240)
+    st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False})

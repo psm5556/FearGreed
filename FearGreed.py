@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from fear_and_greed import FearAndGreedIndex
+#from fear_and_greed import FearAndGreedIndex
+from fear_and_greed import get
 import datetime as dt
 
 st.set_page_config(page_title="Fear & Greed Index Dashboard", layout="centered")
@@ -48,3 +49,4 @@ st.markdown("""
 
 st.markdown("---")
 st.caption("🕒 자동으로 최신 지수가 반영됩니다 (CNN Fear & Greed Index API 기준).")
+

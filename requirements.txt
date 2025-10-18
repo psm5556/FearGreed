@@ -1,8 +1,5 @@
 streamlit
-plotly
+fear-and-greed
 pandas
-numpy
-yfinance
+plotly
 requests
-fear_and_greed
-matplotlib

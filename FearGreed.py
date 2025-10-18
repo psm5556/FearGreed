@@ -1,19 +1,18 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from fear_and_greed import get  # fear-and-greed 라이브러리
-import requests  # 대안으로 직접 API 호출 시
+import requests
 
-# API 데이터 가져오기 (라이브러리 사용)
-fng = get()
-current_score = round(fng.value)  # 점수 (0-100)
-current_rating = fng.description.upper()  # 등급 (e.g., EXTREME FEAR)
-
-# 역사적 데이터 (직접 API 호출로 가져오기, 라이브러리가 지원 안 할 경우)
+# CNN API 데이터 가져오기
 url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
 headers = {"User-Agent": "Mozilla/5.0"}
 response = requests.get(url, headers=headers)
 data = response.json()
+current = data['fear_and_greed']
+current_score = round(current['score'])
+current_rating = current['rating'].upper()
+
+# 역사적 데이터
 historical = data['fear_and_greed_historical']['data']
 df = pd.DataFrame(historical)
 df['x'] = pd.to_datetime(df['x'] / 1000, unit='s')  # 타임스탬프 변환
@@ -22,20 +21,44 @@ df = df.rename(columns={'x': 'Date', 'y': 'Score'})
 # 앱 UI
 st.title("CNN Fear & Greed Index Dashboard")
 
-# 현재 값 표시
-col1, col2 = st.columns(2)
-col1.metric("Current Score", current_score)
-col2.metric("Current Rating", current_rating)
+# 게이지 형태로 현재 값 표시
+fig_gauge = go.Figure(go.Indicator(
+    mode="gauge+number",
+    value=current_score,
+    title={'text': f"Fear & Greed Index<br><span style='font-size:0.8em;color:gray'>{current_rating}</span>"},
+    gauge={
+        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+        'bar': {'color': "black"},
+        'bgcolor': "white",
+        'borderwidth': 2,
+        'bordercolor': "gray",
+        'steps': [
+            {'range': [0, 25], 'color': "red"},
+            {'range': [25, 45], 'color': "orange"},
+            {'range': [45, 55], 'color': "yellow"},
+            {'range': [55, 75], 'color': "lightgreen"},
+            {'range': [75, 100], 'color': "green"}
+        ],
+        'threshold': {
+            'line': {'color': "black", 'width': 4},
+            'thickness': 0.75,
+            'value': current_score
+        }
+    }
+))
+fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+st.plotly_chart(fig_gauge)
 
 # 역사적 차트
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df['Date'], y=df['Score'], mode='lines', name='Fear & Greed'))
-fig.update_layout(title='Historical Fear & Greed Index', xaxis_title='Date', yaxis_title='Score (0-100)')
-st.plotly_chart(fig)
+st.subheader("Historical Fear & Greed Index")
+fig_hist = go.Figure()
+fig_hist.add_trace(go.Scatter(x=df['Date'], y=df['Score'], mode='lines', name='Fear & Greed'))
+fig_hist.update_layout(xaxis_title='Date', yaxis_title='Score (0-100)')
+st.plotly_chart(fig_hist)
 
 # 추가: 이전 값 비교
 st.subheader("Comparisons")
-st.write(f"Previous Close: {data['fear_and_greed']['previous_close']}")
-st.write(f"1 Week Ago: {data['fear_and_greed']['previous_1_week']}")
-st.write(f"1 Month Ago: {data['fear_and_greed']['previous_1_month']}")
-st.write(f"1 Year Ago: {data['fear_and_greed']['previous_1_year']}")
+st.write(f"Previous Close: {current['previous_close']}")
+st.write(f"1 Week Ago: {current['previous_1_week']}")
+st.write(f"1 Month Ago: {current['previous_1_month']}")
+st.write(f"1 Year Ago: {current['previous_1_year']}")

@@ -1,50 +1,41 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-from fear_and_greed import FearAndGreedIndex
-import datetime as dt
+import plotly.graph_objects as go
+from fear_and_greed import get  # fear-and-greed 라이브러리
+import requests  # 대안으로 직접 API 호출 시
 
-st.set_page_config(page_title="Fear & Greed Index Dashboard", layout="centered")
+# API 데이터 가져오기 (라이브러리 사용)
+fng = get()
+current_score = round(fng.value)  # 점수 (0-100)
+current_rating = fng.description.upper()  # 등급 (e.g., EXTREME FEAR)
 
-st.title("📊 Fear & Greed Index Dashboard")
-st.caption("Source: CNN Business / fear-and-greed API")
+# 역사적 데이터 (직접 API 호출로 가져오기, 라이브러리가 지원 안 할 경우)
+url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+headers = {"User-Agent": "Mozilla/5.0"}
+response = requests.get(url, headers=headers)
+data = response.json()
+historical = data['fear_and_greed_historical']['data']
+df = pd.DataFrame(historical)
+df['x'] = pd.to_datetime(df['x'] / 1000, unit='s')  # 타임스탬프 변환
+df = df.rename(columns={'x': 'Date', 'y': 'Score'})
 
-# 데이터 불러오기
-fg = FearAndGreedIndex()
-data = fg.get()
-df = pd.DataFrame(data)
+# 앱 UI
+st.title("CNN Fear & Greed Index Dashboard")
 
-# 데이터 정리
-df["timestamp"] = pd.to_datetime(df["timestamp"])
-df = df.sort_values("timestamp")
+# 현재 값 표시
+col1, col2 = st.columns(2)
+col1.metric("Current Score", current_score)
+col2.metric("Current Rating", current_rating)
 
-# 최신 정보
-current_value = df.iloc[-1]["value"]
-current_label = df.iloc[-1]["label"]
-current_date = df.iloc[-1]["timestamp"].strftime("%Y-%m-%d")
+# 역사적 차트
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df['Date'], y=df['Score'], mode='lines', name='Fear & Greed'))
+fig.update_layout(title='Historical Fear & Greed Index', xaxis_title='Date', yaxis_title='Score (0-100)')
+st.plotly_chart(fig)
 
-st.metric("Current Index", f"{current_value} ({current_label})", help=f"As of {current_date}")
-
-# 그래프
-fig, ax = plt.subplots(figsize=(8, 4))
-ax.plot(df["timestamp"], df["value"], color="royalblue", linewidth=2)
-ax.fill_between(df["timestamp"], df["value"], color="lightblue", alpha=0.4)
-ax.set_title("Fear & Greed Index Over Time")
-ax.set_xlabel("Date")
-ax.set_ylabel("Index (0=Extreme Fear, 100=Extreme Greed)")
-ax.grid(True)
-st.pyplot(fig)
-
-# 범례 설명
-st.markdown("""
-| 구간 | 해석 |
-|------|------|
-| 0~25 | 😱 극단적 공포 (Extreme Fear) |
-| 25~45 | 😟 공포 (Fear) |
-| 45~55 | 😐 중립 (Neutral) |
-| 55~75 | 😌 탐욕 (Greed) |
-| 75~100 | 🤩 극단적 탐욕 (Extreme Greed) |
-""")
-
-st.markdown("---")
-st.caption("🕒 자동으로 최신 지수가 반영됩니다 (CNN Fear & Greed Index API 기준).")
+# 추가: 이전 값 비교
+st.subheader("Comparisons")
+st.write(f"Previous Close: {data['fear_and_greed']['previous_close']}")
+st.write(f"1 Week Ago: {data['fear_and_greed']['previous_1_week']}")
+st.write(f"1 Month Ago: {data['fear_and_greed']['previous_1_month']}")
+st.write(f"1 Year Ago: {data['fear_and_greed']['previous_1_year']}")
